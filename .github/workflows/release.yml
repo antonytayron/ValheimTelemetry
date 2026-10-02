@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing version tag to build and publish
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,9 +17,13 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref }}
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -22,7 +32,7 @@ jobs:
 
       - name: Validate release version
         run: |
-          version="${GITHUB_REF_NAME#v}"
+          version="${RELEASE_TAG#v}"
           grep -Fq "<Version>$version</Version>" ValheimTelemetry.csproj
           grep -Fq "PluginVersion = \"$version\";" src/Plugin.cs
 
@@ -43,8 +53,8 @@ jobs:
           tar -xzf "$RUNNER_TEMP/steamcmd.tar.gz" -C "$RUNNER_TEMP/steamcmd"
           chmod +x "$RUNNER_TEMP/steamcmd/steamcmd.sh"
           "$RUNNER_TEMP/steamcmd/steamcmd.sh" \
-            +force_install_dir "$VALHEIM_DIR" \
             +login anonymous \
+            +force_install_dir "$VALHEIM_DIR" \
             +app_update 896660 validate \
             +quit
 
@@ -67,7 +77,7 @@ jobs:
 
       - name: Package plugin
         run: |
-          zip -j "ValheimTelemetry-${GITHUB_REF_NAME}.zip" \
+          zip -j "ValheimTelemetry-${RELEASE_TAG}.zip" \
             bin/Release/net48/ValheimTelemetry.dll
 
       - name: Publish GitHub Release
@@ -75,6 +85,7 @@ jobs:
         with:
           files: |
             bin/Release/net48/ValheimTelemetry.dll
-            ValheimTelemetry-${{ github.ref_name }}.zip
-          body_path: .github/release-notes/${{ github.ref_name }}.md
+            ValheimTelemetry-${{ env.RELEASE_TAG }}.zip
+          tag_name: ${{ env.RELEASE_TAG }}
+          body_path: .github/release-notes/${{ env.RELEASE_TAG }}.md
           generate_release_notes: false
