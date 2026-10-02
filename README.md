@@ -131,9 +131,10 @@ either `valheim_Data/Managed` or `valheim_server_Data/Managed`.
 
 ## GitHub Release
 
-Pushing a version tag such as `v1.0.0` runs the GitHub Actions release workflow.
+Pushing a version tag such as `v1.1.0` runs the GitHub Actions release workflow.
 It builds the plugin and attaches `ValheimTelemetry.dll` and
-`ValheimTelemetry-v1.0.0.zip` to the GitHub Release.
+`ValheimTelemetry-v1.1.0.zip` to the GitHub Release. Release notes are stored in
+`.github/release-notes/` with the matching tag as the filename.
 
 The workflow runs on an Ubuntu-hosted runner. It downloads the Valheim Dedicated
 Server assemblies with SteamCMD and BepInEx 5.4.23.2 for compilation; these
@@ -141,6 +142,6 @@ dependencies are not included in the published release. Push the tag to start
 the workflow:
 
 ```powershell
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.1.0
+git push origin v1.1.0
 ```

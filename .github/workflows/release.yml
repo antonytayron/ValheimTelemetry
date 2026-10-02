@@ -76,4 +76,5 @@ jobs:
           files: |
             bin/Release/net48/ValheimTelemetry.dll
             ValheimTelemetry-${{ github.ref_name }}.zip
-          generate_release_notes: true
+          body_path: .github/release-notes/${{ github.ref_name }}.md
+          generate_release_notes: false

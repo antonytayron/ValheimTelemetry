@@ -6,7 +6,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>ValheimTelemetry</AssemblyName>
     <RootNamespace>ValheimTelemetry</RootNamespace>
-    <Version>1.0.0</Version>
+    <Version>1.1.0</Version>
     <PlatformTarget>x64</PlatformTarget>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
