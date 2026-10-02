@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Text;
@@ -194,6 +195,38 @@ namespace ValheimTelemetry
                         200,
                         "text/plain; version=0.0.4; charset=utf-8",
                         MetricsService.ToPrometheus());
+
+                    return;
+                }
+
+                if (path.Equals(
+                    "/api/v1/events",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    long afterId = 0;
+                    string afterIdValue = request.QueryString["after_id"];
+
+                    if (!string.IsNullOrEmpty(afterIdValue) &&
+                        (!long.TryParse(
+                            afterIdValue,
+                            NumberStyles.None,
+                            CultureInfo.InvariantCulture,
+                            out afterId) || afterId < 0))
+                    {
+                        WriteText(
+                            response,
+                            400,
+                            "application/json; charset=utf-8",
+                            "{\"error\":\"after_id must be a non-negative integer\"}");
+
+                        return;
+                    }
+
+                    WriteText(
+                        response,
+                        200,
+                        "application/json; charset=utf-8",
+                        JsonUtil.PlayerEvents(afterId));
 
                     return;
                 }

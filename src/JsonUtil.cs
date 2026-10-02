@@ -34,6 +34,47 @@ namespace ValheimTelemetry
             return sb.ToString();
         }
 
+        internal static string PlayerEvents(long afterId)
+        {
+            long earliestId;
+            long latestId;
+            List<PlayerEvent> events = PlayerService.GetEventsAfter(
+                afterId,
+                out earliestId,
+                out latestId);
+
+            var sb = new StringBuilder();
+            sb.Append("{\"count\":");
+            sb.Append(events.Count);
+            sb.Append(",\"earliest_event_id\":");
+            sb.Append(earliestId);
+            sb.Append(",\"latest_event_id\":");
+            sb.Append(latestId);
+            sb.Append(",\"events\":[");
+
+            for (int i = 0; i < events.Count; i++)
+            {
+                if (i > 0)
+                    sb.Append(',');
+
+                PlayerEvent playerEvent = events[i];
+                sb.Append("{\"id\":");
+                sb.Append(playerEvent.Id);
+                sb.Append(",\"type\":\"");
+                AppendEscaped(sb, playerEvent.Type);
+                sb.Append("\",\"player_id\":\"");
+                AppendEscaped(sb, playerEvent.PlayerId);
+                sb.Append("\",\"player_name\":\"");
+                AppendEscaped(sb, playerEvent.PlayerName);
+                sb.Append("\",\"timestamp\":\"");
+                AppendEscaped(sb, playerEvent.Timestamp);
+                sb.Append("\"}");
+            }
+
+            sb.Append("]}");
+            return sb.ToString();
+        }
+
         internal static string Player(PlayerSnapshot player)
         {
             var sb = new StringBuilder();

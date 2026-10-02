@@ -11,11 +11,11 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
     <ValheimDir Condition="'$(ValheimDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Valheim</ValheimDir>
-    <BepInExDir>$(ValheimDir)\BepInEx</BepInExDir>
-    <ManagedDir Condition="Exists('$(ValheimDir)\valheim_Data\Managed')">$(ValheimDir)\valheim_Data\Managed</ManagedDir>
-    <ManagedDir Condition="'$(ManagedDir)' == '' and Exists('$(ValheimDir)\valheim_server_Data\Managed')">$(ValheimDir)\valheim_server_Data\Managed</ManagedDir>
+    <BepInExDir>$(ValheimDir)/BepInEx</BepInExDir>
+    <ManagedDir Condition="Exists('$(ValheimDir)/valheim_Data/Managed')">$(ValheimDir)/valheim_Data/Managed</ManagedDir>
+    <ManagedDir Condition="'$(ManagedDir)' == '' and Exists('$(ValheimDir)/valheim_server_Data/Managed')">$(ValheimDir)/valheim_server_Data/Managed</ManagedDir>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <OutputPath>bin\$(Configuration)\</OutputPath>
+    <OutputPath>bin/$(Configuration)/</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>

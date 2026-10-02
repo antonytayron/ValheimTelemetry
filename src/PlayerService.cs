@@ -1,12 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 
 namespace ValheimTelemetry
 {
     internal static class PlayerService
     {
+        private const int MaxEvents = 1000;
         private static readonly object SnapshotLock = new object();
+        private static readonly Queue<PlayerEvent> Events =
+            new Queue<PlayerEvent>();
         private static Dictionary<string, PlayerSnapshot> _snapshots =
             new Dictionary<string, PlayerSnapshot>();
         private static readonly Dictionary<string, bool> LastDeathState =
@@ -14,12 +18,17 @@ namespace ValheimTelemetry
         private static readonly Dictionary<string, long> DeathCounts =
             new Dictionary<string, long>();
         private static long _deathsTotal;
+        private static long _nextEventId;
+        private static bool _hasSnapshotBaseline;
 
         internal static void Initialize()
         {
             lock (SnapshotLock)
             {
                 _snapshots = new Dictionary<string, PlayerSnapshot>();
+                Events.Clear();
+                _nextEventId = 0;
+                _hasSnapshotBaseline = false;
                 LastDeathState.Clear();
                 DeathCounts.Clear();
                 Interlocked.Exchange(ref _deathsTotal, 0);
@@ -33,7 +42,9 @@ namespace ValheimTelemetry
             {
                 if (ZNet.instance == null || !ZNet.instance.IsServer())
                 {
-                    ReplaceSnapshots(new Dictionary<string, PlayerSnapshot>());
+                    ReplaceSnapshots(
+                        new Dictionary<string, PlayerSnapshot>(),
+                        false);
                     return;
                 }
 
@@ -79,7 +90,7 @@ namespace ValheimTelemetry
                         deaths);
                 }
 
-                ReplaceSnapshots(result);
+                ReplaceSnapshots(result, true);
             }
             catch (Exception ex)
             {
@@ -189,6 +200,30 @@ namespace ValheimTelemetry
             return Interlocked.Read(ref _deathsTotal);
         }
 
+        internal static List<PlayerEvent> GetEventsAfter(
+            long afterId,
+            out long earliestId,
+            out long latestId)
+        {
+            var result = new List<PlayerEvent>();
+
+            lock (SnapshotLock)
+            {
+                latestId = _nextEventId;
+                earliestId = Events.Count > 0
+                    ? Events.Peek().Id
+                    : _nextEventId + 1;
+
+                foreach (PlayerEvent playerEvent in Events)
+                {
+                    if (playerEvent.Id > afterId)
+                        result.Add(playerEvent);
+                }
+            }
+
+            return result;
+        }
+
         internal static bool TryGetPlayer(
             string id,
             out PlayerSnapshot snapshot)
@@ -207,6 +242,9 @@ namespace ValheimTelemetry
             lock (SnapshotLock)
             {
                 _snapshots = new Dictionary<string, PlayerSnapshot>();
+                Events.Clear();
+                _nextEventId = 0;
+                _hasSnapshotBaseline = false;
                 LastDeathState.Clear();
                 DeathCounts.Clear();
                 Interlocked.Exchange(ref _deathsTotal, 0);
@@ -214,10 +252,57 @@ namespace ValheimTelemetry
         }
 
         private static void ReplaceSnapshots(
-            Dictionary<string, PlayerSnapshot> snapshots)
+            Dictionary<string, PlayerSnapshot> snapshots,
+            bool authoritative)
         {
             lock (SnapshotLock)
+            {
+                if (!authoritative)
+                {
+                    _hasSnapshotBaseline = false;
+                }
+                else if (_hasSnapshotBaseline)
+                {
+                    foreach (KeyValuePair<string, PlayerSnapshot> previous
+                        in _snapshots)
+                    {
+                        if (!snapshots.ContainsKey(previous.Key))
+                            AddEvent("player_left", previous.Value);
+                    }
+
+                    foreach (KeyValuePair<string, PlayerSnapshot> current
+                        in snapshots)
+                    {
+                        if (!_snapshots.ContainsKey(current.Key))
+                            AddEvent("player_joined", current.Value);
+                    }
+                }
+                else
+                {
+                    _hasSnapshotBaseline = true;
+                }
+
                 _snapshots = snapshots;
+            }
+        }
+
+        private static void AddEvent(
+            string type,
+            PlayerSnapshot player)
+        {
+            Events.Enqueue(new PlayerEvent
+            {
+                Id = ++_nextEventId,
+                Type = type,
+                PlayerId = player.Id,
+                PlayerName = player.Name,
+                Timestamp = DateTime.UtcNow.ToString(
+                    "o",
+                    CultureInfo.InvariantCulture)
+            });
+
+            while (Events.Count > MaxEvents)
+                Events.Dequeue();
         }
 
     }
@@ -234,5 +319,14 @@ namespace ValheimTelemetry
     {
         public float Current;
         public float Max;
+    }
+
+    internal sealed class PlayerEvent
+    {
+        public long Id;
+        public string Type;
+        public string PlayerId;
+        public string PlayerName;
+        public string Timestamp;
     }
 }

@@ -9,6 +9,7 @@ for a Valheim dedicated server.
 - `GET /api/v1/players` returns online player IDs, names, health, and deaths
   observed during the current plugin session.
 - `GET /api/v1/players/{playerId}` returns one online player's data.
+- `GET /api/v1/events` returns observed player join and leave events.
 - `GET /metrics` exposes Prometheus metrics for the process, network, server,
   world, players, observed player deaths, and tracked portals.
 - Optional API-key authentication and configurable listener address and port.
@@ -62,8 +63,14 @@ can send it using either `X-API-Key` or `Authorization: Bearer <key>`.
 GET /health
 GET /api/v1/players
 GET /api/v1/players/{playerId}
+GET /api/v1/events?after_id=0
 GET /metrics
 ```
+
+The events endpoint returns up to the latest 1,000 events from the current
+plugin session. Use `after_id` with the last event's `id` to poll only newer
+events. Event IDs and history reset when the plugin restarts. Events are
+detected from player-list snapshots; the first snapshot establishes a baseline.
 
 Example player response:
 
@@ -90,7 +97,7 @@ zero.
 ## Build
 
 The project targets .NET Framework 4.8 and requires the BepInEx and Valheim
-assemblies from a local game installation. Build with the .NET SDK:
+assemblies. For a local build, `ValheimDir` must point to a game installation:
 
 ```powershell
 dotnet build -c Release -p:ValheimDir="C:\Program Files (x86)\Steam\steamapps\common\Valheim"
@@ -105,9 +112,10 @@ Pushing a version tag such as `v1.0.0` runs the GitHub Actions release workflow.
 It builds the plugin and attaches `ValheimTelemetry.dll` and
 `ValheimTelemetry-v1.0.0.zip` to the GitHub Release.
 
-The workflow requires a self-hosted Windows runner with the .NET 8 SDK and a
-Valheim installation containing BepInEx. Set the repository Actions variable
-`VALHEIM_DIR` to the installation root, then push the tag:
+The workflow runs on an Ubuntu-hosted runner. It downloads the Valheim Dedicated
+Server assemblies with SteamCMD and BepInEx 5.4.23.2 for compilation; these
+dependencies are not included in the published release. Push the tag to start
+the workflow:
 
 ```powershell
 git tag v1.0.0

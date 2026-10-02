@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: [self-hosted, Windows, X64]
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -20,53 +20,55 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Validate Valheim installation
-        shell: pwsh
-        env:
-          VALHEIM_DIR: ${{ vars.VALHEIM_DIR }}
+      - name: Validate release version
         run: |
-          [xml]$project = Get-Content 'ValheimTelemetry.csproj'
-          $projectVersion = $project.Project.PropertyGroup.Version
-          $pluginSource = Get-Content 'src/Plugin.cs' -Raw
-          if ($env:GITHUB_REF_NAME -ne "v$projectVersion" -or
-              $pluginSource -notmatch "PluginVersion = `"$projectVersion`"") {
-            throw "Release tag and plugin versions must match v$projectVersion."
-          }
+          version="${GITHUB_REF_NAME#v}"
+          grep -Fq "<Version>$version</Version>" ValheimTelemetry.csproj
+          grep -Fq "PluginVersion = \"$version\";" src/Plugin.cs
 
-          if ([string]::IsNullOrWhiteSpace($env:VALHEIM_DIR)) {
-            throw 'Set the repository Actions variable VALHEIM_DIR to the Valheim installation root.'
-          }
+      - name: Install SteamCMD prerequisites
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install --yes lib32gcc-s1 lib32stdc++6
 
-          $requiredPaths = @(
-            (Join-Path $env:VALHEIM_DIR 'BepInEx/core/BepInEx.dll'),
-            (Join-Path $env:VALHEIM_DIR 'BepInEx/core/0Harmony.dll')
-          )
-          $managedDirectories = @(
-            (Join-Path $env:VALHEIM_DIR 'valheim_Data/Managed'),
-            (Join-Path $env:VALHEIM_DIR 'valheim_server_Data/Managed')
-          )
+      - name: Download Valheim server assemblies
+        env:
+          VALHEIM_DIR: ${{ runner.temp }}/valheim
+        run: |
+          mkdir -p "$RUNNER_TEMP/steamcmd" "$VALHEIM_DIR"
+          curl --fail --location --retry 3 \
+            https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
+            --output "$RUNNER_TEMP/steamcmd.tar.gz"
+          tar -xzf "$RUNNER_TEMP/steamcmd.tar.gz" -C "$RUNNER_TEMP/steamcmd"
+          chmod +x "$RUNNER_TEMP/steamcmd/steamcmd.sh"
+          "$RUNNER_TEMP/steamcmd/steamcmd.sh" \
+            +force_install_dir "$VALHEIM_DIR" \
+            +login anonymous \
+            +app_update 896660 validate \
+            +quit
 
-          foreach ($path in $requiredPaths) {
-            if (-not (Test-Path $path)) { throw "Required file not found: $path" }
-          }
-          if (-not ($managedDirectories | Where-Object { Test-Path $_ })) {
-            throw 'Could not find valheim_Data/Managed or valheim_server_Data/Managed under VALHEIM_DIR.'
-          }
+      - name: Download BepInEx references
+        env:
+          VALHEIM_DIR: ${{ runner.temp }}/valheim
+        run: |
+          curl --fail --location --retry 3 \
+            https://github.com/BepInEx/BepInEx/releases/download/v5.4.23.2/BepInEx_linux_x64_5.4.23.2.zip \
+            --output "$RUNNER_TEMP/bepinex.zip"
+          unzip -q "$RUNNER_TEMP/bepinex.zip" -d "$VALHEIM_DIR"
+          test -f "$VALHEIM_DIR/BepInEx/core/BepInEx.dll"
+          test -f "$VALHEIM_DIR/BepInEx/core/0Harmony.dll"
+          test -f "$VALHEIM_DIR/valheim_server_Data/Managed/assembly_valheim.dll"
 
       - name: Build plugin
-        shell: pwsh
         env:
-          VALHEIM_DIR: ${{ vars.VALHEIM_DIR }}
-        run: dotnet build ValheimTelemetry.csproj --configuration Release "-p:ValheimDir=$env:VALHEIM_DIR"
+          VALHEIM_DIR: ${{ runner.temp }}/valheim
+        run: dotnet build ValheimTelemetry.csproj --configuration Release "-p:ValheimDir=$VALHEIM_DIR"
 
       - name: Package plugin
-        shell: pwsh
         run: |
-          $packageDirectory = Join-Path $env:RUNNER_TEMP 'ValheimTelemetry'
-          New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
-          Copy-Item 'bin/Release/net48/ValheimTelemetry.dll' $packageDirectory
-          $archivePath = "ValheimTelemetry-$($env:GITHUB_REF_NAME).zip"
-          Compress-Archive -Path "$packageDirectory/*" -DestinationPath $archivePath
+          zip -j "ValheimTelemetry-${GITHUB_REF_NAME}.zip" \
+            bin/Release/net48/ValheimTelemetry.dll
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
