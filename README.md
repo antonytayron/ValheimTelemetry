@@ -98,3 +98,18 @@ dotnet build -c Release -p:ValheimDir="C:\Program Files (x86)\Steam\steamapps\co
 
 `ValheimDir` should point to the installation root containing `BepInEx` and
 either `valheim_Data/Managed` or `valheim_server_Data/Managed`.
+
+## GitHub Release
+
+Pushing a version tag such as `v1.0.0` runs the GitHub Actions release workflow.
+It builds the plugin and attaches `ValheimTelemetry.dll` and
+`ValheimTelemetry-v1.0.0.zip` to the GitHub Release.
+
+The workflow requires a self-hosted Windows runner with the .NET 8 SDK and a
+Valheim installation containing BepInEx. Set the repository Actions variable
+`VALHEIM_DIR` to the installation root, then push the tag:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```

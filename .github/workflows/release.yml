@@ -1,0 +1,77 @@
+name: Build and publish release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: [self-hosted, Windows, X64]
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Validate Valheim installation
+        shell: pwsh
+        env:
+          VALHEIM_DIR: ${{ vars.VALHEIM_DIR }}
+        run: |
+          [xml]$project = Get-Content 'ValheimTelemetry.csproj'
+          $projectVersion = $project.Project.PropertyGroup.Version
+          $pluginSource = Get-Content 'src/Plugin.cs' -Raw
+          if ($env:GITHUB_REF_NAME -ne "v$projectVersion" -or
+              $pluginSource -notmatch "PluginVersion = `"$projectVersion`"") {
+            throw "Release tag and plugin versions must match v$projectVersion."
+          }
+
+          if ([string]::IsNullOrWhiteSpace($env:VALHEIM_DIR)) {
+            throw 'Set the repository Actions variable VALHEIM_DIR to the Valheim installation root.'
+          }
+
+          $requiredPaths = @(
+            (Join-Path $env:VALHEIM_DIR 'BepInEx/core/BepInEx.dll'),
+            (Join-Path $env:VALHEIM_DIR 'BepInEx/core/0Harmony.dll')
+          )
+          $managedDirectories = @(
+            (Join-Path $env:VALHEIM_DIR 'valheim_Data/Managed'),
+            (Join-Path $env:VALHEIM_DIR 'valheim_server_Data/Managed')
+          )
+
+          foreach ($path in $requiredPaths) {
+            if (-not (Test-Path $path)) { throw "Required file not found: $path" }
+          }
+          if (-not ($managedDirectories | Where-Object { Test-Path $_ })) {
+            throw 'Could not find valheim_Data/Managed or valheim_server_Data/Managed under VALHEIM_DIR.'
+          }
+
+      - name: Build plugin
+        shell: pwsh
+        env:
+          VALHEIM_DIR: ${{ vars.VALHEIM_DIR }}
+        run: dotnet build ValheimTelemetry.csproj --configuration Release "-p:ValheimDir=$env:VALHEIM_DIR"
+
+      - name: Package plugin
+        shell: pwsh
+        run: |
+          $packageDirectory = Join-Path $env:RUNNER_TEMP 'ValheimTelemetry'
+          New-Item -ItemType Directory -Path $packageDirectory -Force | Out-Null
+          Copy-Item 'bin/Release/net48/ValheimTelemetry.dll' $packageDirectory
+          $archivePath = "ValheimTelemetry-$($env:GITHUB_REF_NAME).zip"
+          Compress-Archive -Path "$packageDirectory/*" -DestinationPath $archivePath
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bin/Release/net48/ValheimTelemetry.dll
+            ValheimTelemetry-${{ github.ref_name }}.zip
+          generate_release_notes: true
