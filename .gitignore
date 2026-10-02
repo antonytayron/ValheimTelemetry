@@ -1,0 +1,10 @@
+bin/
+obj/
+output/
+.vs/
+TestResults/
+*.user
+*.suo
+*.pdb
+BepInEx/config/
+BepInEx/LogOutput.log
