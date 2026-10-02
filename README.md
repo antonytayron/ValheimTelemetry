@@ -10,8 +10,10 @@ for a Valheim dedicated server.
   observed during the current plugin session.
 - `GET /api/v1/players/{playerId}` returns one online player's data.
 - `GET /api/v1/events` returns observed player join and leave events.
-- `GET /metrics` exposes Prometheus metrics for the process, network, server,
-  world, players, observed player deaths, and tracked portals.
+- `GET /metrics` exposes Prometheus metrics for server tick duration and stalls,
+  process and system CPU, memory, garbage collection, network traffic, ZDO
+  activity, socket send queues, connected peers, world, players, observed player
+  deaths, and portals.
 - Optional API-key authentication and configurable listener address and port.
 
 ## Player data limitations
@@ -71,6 +73,27 @@ The events endpoint returns up to the latest 1,000 events from the current
 plugin session. Use `after_id` with the last event's `id` to poll only newer
 events. Event IDs and history reset when the plugin restarts. Events are
 detected from player-list snapshots; the first snapshot establishes a baseline.
+
+## Lag metrics
+
+- `valheim_server_tick_duration_seconds` is a cumulative histogram of server
+  main-thread frame durations. `valheim_server_tick_stalls_total` counts frames
+  lasting at least 100 ms. Both reset when the plugin restarts.
+- `valheim_process_cpu_core_percent` measures the process against one logical
+  core; `valheim_process_cpu_percent` remains normalized against all host cores.
+  `valheim_system_cpu_percent` measures the whole machine and is `-1` until a
+  baseline is available or when the platform counters cannot be read.
+- `valheim_server_networked_objects`, `valheim_server_objects_instantiated`,
+  `valheim_server_zdos_sent_per_second`, `valheim_server_zdos_received_per_second`,
+  and `valheim_server_zdo_change_queue` expose the server's ZDO state and the
+  latest rates reported by the game.
+- `valheim_server_send_queue_bytes` is the largest send queue among connected
+  peers. Check `valheim_server_send_queue_available`; it is `0` if any peer
+  socket cannot be read.
+
+Tick duration is a server-side frame-time proxy, not a measurement of client
+latency. Per-player ping and packet loss are not exported because dedicated
+server sockets do not reliably expose them.
 
 Example player response:
 

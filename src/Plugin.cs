@@ -57,6 +57,9 @@ namespace ValheimTelemetry
         {
             try
             {
+                if (ZNet.instance != null && ZNet.instance.IsServer())
+                    MetricsService.RecordTick(Time.unscaledDeltaTime);
+
                 float now = Time.unscaledTime;
 
                 if (now >= _nextPlayerSnapshot)
