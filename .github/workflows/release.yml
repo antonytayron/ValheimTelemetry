@@ -53,8 +53,8 @@ jobs:
           tar -xzf "$RUNNER_TEMP/steamcmd.tar.gz" -C "$RUNNER_TEMP/steamcmd"
           chmod +x "$RUNNER_TEMP/steamcmd/steamcmd.sh"
           "$RUNNER_TEMP/steamcmd/steamcmd.sh" \
-            +login anonymous \
             +force_install_dir "$VALHEIM_DIR" \
+            +login anonymous \
             +app_update 896660 validate \
             +quit
 
