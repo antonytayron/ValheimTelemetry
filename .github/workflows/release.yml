@@ -52,11 +52,23 @@ jobs:
             --output "$RUNNER_TEMP/steamcmd.tar.gz"
           tar -xzf "$RUNNER_TEMP/steamcmd.tar.gz" -C "$RUNNER_TEMP/steamcmd"
           chmod +x "$RUNNER_TEMP/steamcmd/steamcmd.sh"
-          "$RUNNER_TEMP/steamcmd/steamcmd.sh" \
-            +force_install_dir "$VALHEIM_DIR" \
-            +login anonymous \
-            +app_update 896660 validate \
-            +quit
+          for attempt in 1 2 3; do
+            if "$RUNNER_TEMP/steamcmd/steamcmd.sh" \
+              +force_install_dir "$VALHEIM_DIR" \
+              +login anonymous \
+              +app_update 896660 validate \
+              +quit; then
+              break
+            fi
+
+            if [ "$attempt" -eq 3 ]; then
+              echo "SteamCMD failed to download the Valheim server after 3 attempts."
+              exit 1
+            fi
+
+            echo "SteamCMD download failed on attempt $attempt; retrying in 15 seconds."
+            sleep 15
+          done
 
       - name: Download BepInEx references
         env:
