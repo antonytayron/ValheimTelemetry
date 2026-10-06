@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
+using System.Text;
 using System.Threading;
+using BepInEx;
 
 namespace ValheimTelemetry
 {
@@ -17,6 +20,10 @@ namespace ValheimTelemetry
             new Dictionary<string, bool>();
         private static readonly Dictionary<string, long> DeathCounts =
             new Dictionary<string, long>();
+        private static readonly Dictionary<string, string> PlayerNames =
+            new Dictionary<string, string>();
+        private static string _persistencePath;
+        private static bool _persistenceAvailable;
         private static long _deathsTotal;
         private static long _nextEventId;
         private static bool _hasSnapshotBaseline;
@@ -31,7 +38,9 @@ namespace ValheimTelemetry
                 _hasSnapshotBaseline = false;
                 LastDeathState.Clear();
                 DeathCounts.Clear();
+                PlayerNames.Clear();
                 Interlocked.Exchange(ref _deathsTotal, 0);
+                LoadPersistentData();
             }
         }
 
@@ -53,6 +62,7 @@ namespace ValheimTelemetry
                     online = new List<ZNet.PlayerInfo>();
 
                 var result = new Dictionary<string, PlayerSnapshot>();
+                bool persistenceChanged = false;
 
                 foreach (ZNet.PlayerInfo info in online)
                 {
@@ -81,14 +91,24 @@ namespace ValheimTelemetry
                     string id = playerId != 0
                         ? playerId.ToString()
                         : info.m_characterID.ToString();
-                    long deaths = TrackDeaths(id, zdo);
+                    string name = string.IsNullOrEmpty(info.m_name)
+                        ? "Unknown"
+                        : info.m_name;
+                    long deaths = TrackDeaths(
+                        id,
+                        name,
+                        zdo,
+                        ref persistenceChanged);
 
                     result[id] = CreateSnapshot(
                         id,
-                        info.m_name,
+                        name,
                         zdo,
                         deaths);
                 }
+
+                if (persistenceChanged)
+                    SavePersistentData();
 
                 ReplaceSnapshots(result, true);
             }
@@ -142,42 +162,197 @@ namespace ValheimTelemetry
             }
         }
 
-        private static long TrackDeaths(string id, ZDO zdo)
+        private static long TrackDeaths(
+            string id,
+            string name,
+            ZDO zdo,
+            ref bool persistenceChanged)
         {
-            long deaths;
-            DeathCounts.TryGetValue(id, out deaths);
-
-            if (zdo == null)
-                return deaths;
-
-            bool isDead;
-            try
+            bool hasDeadState = false;
+            bool isDead = false;
+            if (zdo != null)
             {
-                isDead = zdo.GetBool(ZDOVars.s_dead, false);
-            }
-            catch
-            {
-                return deaths;
-            }
-
-            bool wasDead;
-            if (LastDeathState.TryGetValue(id, out wasDead))
-            {
-                if (!wasDead && isDead)
+                try
                 {
-                    deaths++;
-                    DeathCounts[id] = deaths;
-                    Interlocked.Increment(ref _deathsTotal);
+                    isDead = zdo.GetBool(ZDOVars.s_dead, false);
+                    hasDeadState = true;
+                }
+                catch
+                {
                 }
             }
-            else if (!DeathCounts.ContainsKey(id))
+
+            lock (SnapshotLock)
             {
-                DeathCounts[id] = 0;
+                long deaths;
+                if (!DeathCounts.TryGetValue(id, out deaths))
+                {
+                    DeathCounts[id] = 0;
+                    persistenceChanged = true;
+                }
+
+                string previousName;
+                if (!PlayerNames.TryGetValue(id, out previousName) ||
+                    !string.Equals(
+                        previousName,
+                        name,
+                        StringComparison.Ordinal))
+                {
+                    PlayerNames[id] = name;
+                    persistenceChanged = true;
+                }
+
+                if (hasDeadState)
+                {
+                    bool wasDead;
+                    if (LastDeathState.TryGetValue(id, out wasDead) &&
+                        !wasDead && isDead)
+                    {
+                        deaths = DeathCounts[id] + 1;
+                        DeathCounts[id] = deaths;
+                        Interlocked.Increment(ref _deathsTotal);
+                        persistenceChanged = true;
+                    }
+
+                    LastDeathState[id] = isDead;
+                }
+
+                DeathCounts.TryGetValue(id, out deaths);
+                return deaths;
+            }
+        }
+
+        private static void LoadPersistentData()
+        {
+            try
+            {
+                _persistencePath = Path.Combine(
+                    Paths.ConfigPath,
+                    Plugin.PluginGuid + ".players");
+
+                if (!File.Exists(_persistencePath))
+                {
+                    _persistenceAvailable = true;
+                    return;
+                }
+
+                string[] lines = File.ReadAllLines(_persistencePath);
+                if (lines.Length == 0 ||
+                    lines[0] != "# ValheimTelemetry player data v1")
+                {
+                    throw new InvalidDataException(
+                        "Unrecognized player data file format.");
+                }
+
+                var loadedDeaths = new Dictionary<string, long>();
+                var loadedNames = new Dictionary<string, string>();
+                long totalDeaths = 0;
+
+                for (int i = 1; i < lines.Length; i++)
+                {
+                    if (string.IsNullOrWhiteSpace(lines[i]))
+                        continue;
+
+                    string[] fields = lines[i].Split('\t');
+                    long deaths;
+                    if (fields.Length != 3 ||
+                        !long.TryParse(
+                            fields[2],
+                            NumberStyles.None,
+                            CultureInfo.InvariantCulture,
+                            out deaths) ||
+                        deaths < 0)
+                    {
+                        throw new InvalidDataException(
+                            "Invalid player data at line " + (i + 1) + ".");
+                    }
+
+                    string id = Encoding.UTF8.GetString(
+                        Convert.FromBase64String(fields[0]));
+                    string name = Encoding.UTF8.GetString(
+                        Convert.FromBase64String(fields[1]));
+
+                    if (string.IsNullOrWhiteSpace(id) ||
+                        loadedDeaths.ContainsKey(id))
+                    {
+                        throw new InvalidDataException(
+                            "Invalid or duplicate player ID at line " +
+                            (i + 1) + ".");
+                    }
+
+                    loadedDeaths.Add(id, deaths);
+                    loadedNames.Add(id, name);
+                    totalDeaths = checked(totalDeaths + deaths);
+                }
+
+                foreach (KeyValuePair<string, long> entry in loadedDeaths)
+                    DeathCounts.Add(entry.Key, entry.Value);
+
+                foreach (KeyValuePair<string, string> entry in loadedNames)
+                    PlayerNames.Add(entry.Key, entry.Value);
+
+                Interlocked.Exchange(ref _deathsTotal, totalDeaths);
+                _persistenceAvailable = true;
+            }
+            catch (Exception ex)
+            {
+                _persistenceAvailable = false;
+                Plugin.Log.LogError(
+                    $"Unable to load persisted player data; the data file will not be overwritten: {ex}");
+            }
+        }
+
+        private static void SavePersistentData()
+        {
+            if (!_persistenceAvailable ||
+                string.IsNullOrEmpty(_persistencePath))
+            {
+                return;
             }
 
-            LastDeathState[id] = isDead;
-            DeathCounts.TryGetValue(id, out deaths);
-            return deaths;
+            string contents;
+            lock (SnapshotLock)
+            {
+                var sb = new StringBuilder();
+                sb.AppendLine("# ValheimTelemetry player data v1");
+
+                foreach (KeyValuePair<string, long> entry in DeathCounts)
+                {
+                    string name;
+                    PlayerNames.TryGetValue(entry.Key, out name);
+
+                    sb.Append(Convert.ToBase64String(
+                            Encoding.UTF8.GetBytes(entry.Key)))
+                      .Append('\t')
+                      .Append(Convert.ToBase64String(
+                            Encoding.UTF8.GetBytes(name ?? string.Empty)))
+                      .Append('\t')
+                      .Append(entry.Value.ToString(
+                            CultureInfo.InvariantCulture))
+                      .AppendLine();
+                }
+
+                contents = sb.ToString();
+            }
+
+            try
+            {
+                string temporaryPath = _persistencePath + ".tmp";
+                File.WriteAllText(
+                    temporaryPath,
+                    contents,
+                    new UTF8Encoding(false));
+
+                if (File.Exists(_persistencePath))
+                    File.Replace(temporaryPath, _persistencePath, null);
+                else
+                    File.Move(temporaryPath, _persistencePath);
+            }
+            catch (Exception ex)
+            {
+                Plugin.Log.LogError(
+                    $"Unable to save persisted player data: {ex}");
+            }
         }
 
         private static ResourceSnapshot Unavailable()
@@ -198,6 +373,28 @@ namespace ValheimTelemetry
         internal static long GetDeathsTotal()
         {
             return Interlocked.Read(ref _deathsTotal);
+        }
+
+        internal static List<PlayerDeathSnapshot> GetDeathRecords()
+        {
+            var result = new List<PlayerDeathSnapshot>();
+
+            lock (SnapshotLock)
+            {
+                foreach (KeyValuePair<string, long> entry in DeathCounts)
+                {
+                    string name;
+                    PlayerNames.TryGetValue(entry.Key, out name);
+                    result.Add(new PlayerDeathSnapshot
+                    {
+                        Id = entry.Key,
+                        Name = string.IsNullOrEmpty(name) ? "Unknown" : name,
+                        Deaths = entry.Value
+                    });
+                }
+            }
+
+            return result;
         }
 
         internal static List<PlayerEvent> GetEventsAfter(
@@ -247,6 +444,7 @@ namespace ValheimTelemetry
                 _hasSnapshotBaseline = false;
                 LastDeathState.Clear();
                 DeathCounts.Clear();
+                PlayerNames.Clear();
                 Interlocked.Exchange(ref _deathsTotal, 0);
             }
         }
@@ -305,6 +503,13 @@ namespace ValheimTelemetry
                 Events.Dequeue();
         }
 
+    }
+
+    internal sealed class PlayerDeathSnapshot
+    {
+        public string Id;
+        public string Name;
+        public long Deaths;
     }
 
     internal sealed class PlayerSnapshot

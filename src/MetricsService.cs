@@ -713,11 +713,13 @@ namespace ValheimTelemetry
                 _serverSendQueueAvailable ? 1 : 0);
 
             AppendCounter(sb, "valheim_player_deaths_total",
-                "Player deaths observed since this plugin started.",
+                "Persisted player deaths observed by this plugin.",
                 PlayerService.GetDeathsTotal());
 
             List<PlayerSnapshot> players =
                 PlayerService.GetPlayers();
+            List<PlayerDeathSnapshot> deathRecords =
+                PlayerService.GetDeathRecords();
 
             AppendGauge(sb, "valheim_player_count",
                 "Number of player telemetry snapshots.",
@@ -732,6 +734,10 @@ namespace ValheimTelemetry
             AppendHelpType(sb, "valheim_player_health_max",
                 "Maximum player health.", "gauge");
 
+            AppendHelpType(sb, "valheim_player_deaths",
+                "Persisted deaths observed for each player, including offline players.",
+                "gauge");
+
             foreach (PlayerSnapshot player in players)
             {
                 string id = Escape(player.Id);
@@ -745,11 +751,22 @@ namespace ValheimTelemetry
 
                 AppendPlayerGauge(
                     sb, "valheim_player_health",
-                    player.Id, player.Health.Current);
+                    player.Id, player.Name, player.Health.Current);
 
                 AppendPlayerGauge(
                     sb, "valheim_player_health_max",
-                    player.Id, player.Health.Max);
+                    player.Id, player.Name, player.Health.Max);
+            }
+
+            foreach (PlayerDeathSnapshot player in deathRecords)
+            {
+                sb.Append("valheim_player_deaths{player_id=\"")
+                  .Append(Escape(player.Id))
+                  .Append("\",name=\"")
+                  .Append(Escape(player.Name))
+                  .Append("\"} ")
+                  .Append(player.Deaths)
+                  .Append('\n');
             }
 
             return sb.ToString();
@@ -802,11 +819,14 @@ namespace ValheimTelemetry
             StringBuilder sb,
             string name,
             string playerId,
+            string playerName,
             double value)
         {
             sb.Append(name)
               .Append("{player_id=\"")
               .Append(Escape(playerId))
+              .Append("\",name=\"")
+              .Append(Escape(playerName))
               .Append("\"} ")
               .Append(Number(value))
               .Append('\n');

@@ -7,7 +7,7 @@ for a Valheim dedicated server.
 
 - `GET /health` reports plugin status and version.
 - `GET /api/v1/players` returns online player IDs, names, health, and deaths
-  observed during the current plugin session.
+  observed by the plugin.
 - `GET /api/v1/players/{playerId}` returns one online player's data.
 - `GET /api/v1/events` returns observed player join and leave events.
 - `GET /metrics` exposes Prometheus metrics for server tick duration and stalls,
@@ -24,9 +24,14 @@ adrenaline fields; these values are intentionally not included in the API.
 Obtaining them would require a client-side mod to send the values to the server.
 
 Death counts record dead-state transitions observed while the plugin is
-running. They are session counters, are not loaded from the player's saved
-profile, and reset when the plugin or server restarts. The portal metric counts
-portal ZDOs currently tracked by the server.
+running and are stored in
+`BepInEx/config/br.com.midgard.valheimtelemetry.players`. They survive plugin
+and server restarts and are not loaded from the player's saved profile. The
+`valheim_player_deaths{player_id,name}` metric includes known players whether
+online or offline. The `valheim_player_health{player_id,name}` and
+`valheim_player_health_max{player_id,name}` metrics are published while the
+server has the player's health ZDO. The portal metric counts portal ZDOs
+currently tracked by the server.
 
 ## Installation
 
@@ -131,9 +136,9 @@ either `valheim_Data/Managed` or `valheim_server_Data/Managed`.
 
 ## GitHub Release
 
-Pushing a version tag such as `v1.1.0` runs the GitHub Actions release workflow.
+Pushing a version tag such as `v1.2.0` runs the GitHub Actions release workflow.
 It builds the plugin and attaches `ValheimTelemetry.dll` and
-`ValheimTelemetry-v1.1.0.zip` to the GitHub Release. Release notes are stored in
+`ValheimTelemetry-v1.2.0.zip` to the GitHub Release. Release notes are stored in
 `.github/release-notes/` with the matching tag as the filename.
 
 The workflow runs on an Ubuntu-hosted runner. It downloads the Valheim Dedicated
@@ -142,6 +147,6 @@ dependencies are not included in the published release. Push the tag to start
 the workflow:
 
 ```powershell
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
