@@ -11,6 +11,7 @@ namespace ValheimTelemetry
     internal static class PlayerService
     {
         private const int MaxEvents = 1000;
+        private const string InvalidPlayerId = "0:0";
         private static readonly object SnapshotLock = new object();
         private static readonly Queue<PlayerEvent> Events =
             new Queue<PlayerEvent>();
@@ -24,6 +25,7 @@ namespace ValheimTelemetry
             new Dictionary<string, string>();
         private static string _persistencePath;
         private static bool _persistenceAvailable;
+        private static bool _persistenceNeedsSave;
         private static long _deathsTotal;
         private static long _nextEventId;
         private static bool _hasSnapshotBaseline;
@@ -39,8 +41,15 @@ namespace ValheimTelemetry
                 LastDeathState.Clear();
                 DeathCounts.Clear();
                 PlayerNames.Clear();
+                _persistenceNeedsSave = false;
                 Interlocked.Exchange(ref _deathsTotal, 0);
                 LoadPersistentData();
+            }
+
+            if (_persistenceNeedsSave)
+            {
+                SavePersistentData();
+                _persistenceNeedsSave = false;
             }
         }
 
@@ -91,6 +100,14 @@ namespace ValheimTelemetry
                     string id = playerId != 0
                         ? playerId.ToString()
                         : info.m_characterID.ToString();
+                    if (string.Equals(
+                        id,
+                        InvalidPlayerId,
+                        StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
                     string name = string.IsNullOrEmpty(info.m_name)
                         ? "Unknown"
                         : info.m_name;
@@ -280,6 +297,15 @@ namespace ValheimTelemetry
                             (i + 1) + ".");
                     }
 
+                    if (string.Equals(
+                        id,
+                        InvalidPlayerId,
+                        StringComparison.Ordinal))
+                    {
+                        _persistenceNeedsSave = true;
+                        continue;
+                    }
+
                     loadedDeaths.Add(id, deaths);
                     loadedNames.Add(id, name);
                     totalDeaths = checked(totalDeaths + deaths);
@@ -318,6 +344,14 @@ namespace ValheimTelemetry
 
                 foreach (KeyValuePair<string, long> entry in DeathCounts)
                 {
+                    if (string.Equals(
+                        entry.Key,
+                        InvalidPlayerId,
+                        StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
                     string name;
                     PlayerNames.TryGetValue(entry.Key, out name);
 
@@ -383,6 +417,14 @@ namespace ValheimTelemetry
             {
                 foreach (KeyValuePair<string, long> entry in DeathCounts)
                 {
+                    if (string.Equals(
+                        entry.Key,
+                        InvalidPlayerId,
+                        StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
                     string name;
                     PlayerNames.TryGetValue(entry.Key, out name);
                     result.Add(new PlayerDeathSnapshot

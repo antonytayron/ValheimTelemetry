@@ -10,7 +10,7 @@ namespace ValheimTelemetry
     {
         public const string PluginGuid = "br.com.midgard.valheimtelemetry";
         public const string PluginName = "Valheim Telemetry";
-        public const string PluginVersion = "1.2.0";
+        public const string PluginVersion = "1.2.1";
 
         internal static ManualLogSource Log { get; private set; }
 
